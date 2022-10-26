@@ -1,4 +1,4 @@
-def topic_training_gensim(dataset, name_dataset, user, topics, passes_gensim=500, iterations_gensim=5000, random_state_gensim=100):
+def topic_training_gensim(corpus_dictionary, name_dataset, user, topics, passes_gensim=500, iterations_gensim=5000, random_state_gensim=100):
     import gensim
     import gensim.corpora as corpora
     from gensim.models import CoherenceModel
@@ -6,11 +6,29 @@ def topic_training_gensim(dataset, name_dataset, user, topics, passes_gensim=500
     from datetime import datetime
     import pandas as pd
 
+    # Auslesen der Chunks aus top_dic und zusammenführen zum data_final
+    top_dic = corpus_dictionary
+    chunk_data = []
+    for a in top_dic["korpus"]:
+        for i in top_dic["korpus"][a]:
+            chunk_count = 0
+            chunk_text = []
+            for n in top_dic["korpus"][a][i]["sent"]:
+                if top_dic["korpus"][a][i]["sent"][n]["chunk"] == chunk_count:
+                    chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
+                else:
+                    chunk_data += [[i + " chunk_" + str(chunk_count), chunk_text]]
+                    chunk_count += 1
+                    chunk_text = []
+                    chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
+
+    dataset = []
+    for i in chunk_data:
+        dataset += [i[1]]
+
     id2word = corpora.Dictionary(dataset)
 
     corpus = [id2word.doc2bow(text) for text in dataset]
-
-    random_state_gensim = 100
 
     lda_model_gensim = gensim.models.ldamodel.LdaModel(corpus=corpus, id2word=id2word,
                                                        num_topics=topics, random_state=random_state_gensim,
@@ -20,7 +38,6 @@ def topic_training_gensim(dataset, name_dataset, user, topics, passes_gensim=500
 
 
     # Document-Topics-Liste erstellen und Topic-Weights berechnen
-
     doc_tops_import = lda_model_gensim.get_document_topics(corpus)
 
     doc_tops_gensim = []
@@ -48,8 +65,48 @@ def topic_training_gensim(dataset, name_dataset, user, topics, passes_gensim=500
     coherence_model_ldagensim = CoherenceModel(model=lda_model_gensim,
                                                texts=dataset, dictionary=id2word, coherence='c_v')
     coherence_ldagensim = coherence_model_ldagensim.get_coherence()
-    print('\nCoherence Score: ', coherence_ldagensim)
 
+    # es wird das finale dic erstellt mit den drei Kategorien "korpus" = alle Interviews; "weight" = Chunk weight Werte; "words" = Wortlisten der Topics
+    # vereinfachen möglich! siehe Gespräch mit Dennis
+
+    for i in range(len(doc_tops_gensim)):
+        if chunk_data[i][0].split(" ")[0][:3] not in top_dic["weight"]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]] = {}
+        if chunk_data[i][0].split(" ")[0] not in top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][chunk_data[i][0].split(" ")[0]] = {}
+        if chunk_data[i][0].split("_")[1] not in top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][
+            chunk_data[i][0].split(" ")[0]]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][chunk_data[i][0].split(" ")[0]][
+                chunk_data[i][0].split("_")[1]] = {}
+        for a in doc_tops_gensim[i]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][chunk_data[i][0].split(" ")[0]][
+                chunk_data[i][0].split("_")[1]][a[0]] = a[1]
+
+    # Zuerst werden die Ergebnislisten aus top_words_mallet getrennt, da sie in einer Kette mit "+" aneinandergedliedert sind. (0.000*"zetteln" + 0.000*"salonsozialisten") und an word_list_splittet übergeben
+    # anschließend wird das Wort*Wert geflecht getrennt und als Tupel (Wert, Wort) passend zu seinem Topic dem dic übergeben.
+
+    word_list_splitted = []
+    for i in topwords_gensim:
+        word_list_splitted += [(i[0], i[1].split("+"))]
+    for a in word_list_splitted:
+        word_weight_splitted = []
+        for b in a[1]:
+            c = float(b.split("*")[0])
+            d = ((b.split("*")[1]).split('"')[1::2])[0]
+            word_weight_splitted += [(c, d)]
+        top_dic["words"][a[0]] = word_weight_splitted
+
+    # Abspeichern gewisser meta-daten im top_dic
+    top_dic["settings"].update({"model": "gensim"})
+    top_dic["settings"].update({"topics": topics})
+    top_dic["settings"].update({"coherence": coherence_ldagensim})
+    top_dic["settings"].update({"average_weight": average_weight_gensim})
+    top_dic["settings"].update({"min_weight": min_weight_gensim})
+    top_dic["settings"].update({"max_weight": max_weight_gensim})
+
+
+
+    print('\nCoherence Score: ', coherence_ldagensim)
 
     print('Minimales Topic-Weight Gensim: ' + str(min_weight_gensim))
     print('Durchschnittliches Topic-Weight Gensim: ' + str(average_weight_gensim))
@@ -90,10 +147,10 @@ def topic_training_gensim(dataset, name_dataset, user, topics, passes_gensim=500
     #
     # out.close()
 
-    return lda_model_gensim, doc_tops_gensim, topwords_gensim
+    return top_dic
 
 
-def topic_training_mallet(dataset, name_dataset, user, topics, mallet_path, optimize_interval_mallet=500, iterations_mallet=5000, random_seed_mallet=100):
+def topic_training_mallet(corpus_dictionary, name_dataset, user, topics, mallet_path, optimize_interval_mallet=500, iterations_mallet=5000, random_seed_mallet=100):
     import gensim
     import gensim.corpora as corpora
     from gensim.models import CoherenceModel
@@ -101,11 +158,30 @@ def topic_training_mallet(dataset, name_dataset, user, topics, mallet_path, opti
     from datetime import datetime
     import pandas as pd
 
+
+    #Auslesen der Chunks aus top_dic und zusammenführen zum data_final
+    top_dic = corpus_dictionary
+    chunk_data = []
+    for a in top_dic["korpus"]:
+        for i in top_dic["korpus"][a]:
+            chunk_count = 0
+            chunk_text = []
+            for n in top_dic["korpus"][a][i]["sent"]:
+                if top_dic["korpus"][a][i]["sent"][n]["chunk"] == chunk_count:
+                    chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
+                else:
+                    chunk_data += [[i + " chunk_" + str(chunk_count), chunk_text]]
+                    chunk_count += 1
+                    chunk_text = []
+                    chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
+
+    dataset = []
+    for i in chunk_data:
+        dataset += [i[1]]
+
+
     id2word = corpora.Dictionary(dataset)
-
     corpus = [id2word.doc2bow(text) for text in dataset]
-
-
 
     lda_model_mallet = gensim.models.wrappers.ldamallet.LdaMallet(mallet_path, corpus=corpus, id2word=id2word,
                                                                   num_topics=topics, iterations=iterations_mallet,
@@ -145,6 +221,49 @@ def topic_training_mallet(dataset, name_dataset, user, topics, mallet_path, opti
     coherence_model_ldamallet = CoherenceModel(model=lda_model_mallet,
                                                texts=dataset, dictionary=id2word, coherence='c_v')
     coherence_ldamallet = coherence_model_ldamallet.get_coherence()
+
+    # es wird das finale dic erstellt mit den drei Kategorien "korpus" = alle Interviews; "weight" = Chunk weight Werte; "words" = Wortlisten der Topics
+    # vereinfachen möglich! siehe Gespräch mit Dennis
+
+    for i in range(len(doc_tops_mallet)):
+        if chunk_data[i][0].split(" ")[0][:3] not in top_dic["weight"]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]] = {}
+        if chunk_data[i][0].split(" ")[0] not in top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][chunk_data[i][0].split(" ")[0]] = {}
+        if chunk_data[i][0].split("_")[1] not in top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][
+            chunk_data[i][0].split(" ")[0]]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][chunk_data[i][0].split(" ")[0]][
+                chunk_data[i][0].split("_")[1]] = {}
+        for a in doc_tops_mallet[i]:
+            top_dic["weight"][chunk_data[i][0].split(" ")[0][:3]][chunk_data[i][0].split(" ")[0]][
+                chunk_data[i][0].split("_")[1]][a[0]] = a[1]
+
+    # Zuerst werden die Ergebnislisten aus top_words_mallet getrennt, da sie in einer Kette mit "+" aneinandergedliedert sind. (0.000*"zetteln" + 0.000*"salonsozialisten") und an word_list_splittet übergeben
+    # anschließend wird das Wort*Wert geflecht getrennt und als Tupel (Wert, Wort) passend zu seinem Topic dem dic übergeben.
+
+
+    word_list_splitted = []
+    for i in topwords_mallet:
+        word_list_splitted += [(i[0], i[1].split("+"))]
+    for a in word_list_splitted:
+        word_weight_splitted = []
+        for b in a[1]:
+            c = float(b.split("*")[0])
+            d = ((b.split("*")[1]).split('"')[1::2])[0]
+            word_weight_splitted += [(c, d)]
+        top_dic["words"][a[0]] = word_weight_splitted
+
+
+    # Abspeichern gewisser meta-daten im top_dic
+    top_dic["settings"].update({"model": "mallet"})
+    top_dic["settings"].update({"topics": topics})
+    top_dic["settings"].update({"coherence": coherence_ldamallet})
+    top_dic["settings"].update({"average_weight": average_weight_mallet})
+    top_dic["settings"].update({"min_weight": min_weight_mallet})
+    top_dic["settings"].update({"max_weight": max_weight_mallet})
+
+
+
     print('\nCoherence Score: ', coherence_ldamallet)
 
     print('Minimales Topic-Weight Mallet: ' + str(min_weight_mallet))
@@ -185,62 +304,38 @@ def topic_training_mallet(dataset, name_dataset, user, topics, mallet_path, opti
     # out.write('Maximales Topic-Weight Gensim: ' + str(max_weight_mallet) + '\n')
     # out.close()
 
-    return lda_model_mallet, doc_tops_mallet, topwords_mallet
+    return top_dic
 
-def print_topics_gensim(top_words_gensim, number_of_words, name_dataset_gensim, save_doc=False):
-    """
-    engines can be 'gensim' or 'mallet'
-    to save list include save_doc=True
-    to save include optional arguments name_dataset and user
-    """
-    from datetime import datetime
-    import re
-    now = str(datetime.now())[:19]
+#Es brauch keine unterscheidung mehr zwischen gensim und mallet, bei der Ausgabe der Topics.
 
-    if save_doc:
-                out = open('keywords_gensim_' + name_dataset_gensim + '_' + str(
-                    len(top_words_gensim.splitlines())) + 'topics_' + str(number_of_words) + 'keywords' + now + '.txt', 'w',
-                           encoding='UTF-8')
-                for line in top_words_gensim:
-                    newline = []
-                    for i in range(0, number_of_words):
-                        newline.append(line[1].split(' + ')[i])
-                    out_line = str(int(line[0])) + ' ' + str(re.findall(r"\"(.*?)\"", str(newline))) + '\n'
-                    out.write(out_line)
-                    print(out_line)
-                out.close()
-
-    else:
-                for line in top_words_gensim:
-                    newline = []
-                    for i in range(0, number_of_words):
-                        newline.append(line[1].split(' + ')[i])
-                    out_line = str(int(line[0])) + ' ' + str(re.findall(r"\"(.*?)\"", str(newline))) + '\n'
-                    print(out_line)
-
-def print_topics_mallet(top_words_mallet, number_of_words, name_dataset_mallet, save_doc=False):
+def print_topics(topic_dictionary, number_of_words, name_dataset_mallet, save_doc=False):
     from datetime import datetime
     import re
     import gensim
     now = str(datetime.now())[:19]
+    top_dic = topic_dictionary
+
+    word_dic = {}
 
     if save_doc:
-                out = open('keywords_mallet_' + name_dataset_mallet + '_' + str(len(top_words_mallet.splitlines())
-                    ) + 'topics_' + str(number_of_words) + 'keywords' + now + '.txt', 'w',
+                out = open('keywords_mallet_' + name_dataset_mallet + '_' #+ str(len(top_words_mallet.splitlines()))
+                    + 'topics_' + str(number_of_words) + 'keywords' + now + '.txt', 'w',
                            encoding='UTF-8')
-                for line in top_words_mallet:
-                    newline = []
-                    for i in range(0, number_of_words):
-                        newline.append(line[1].split(' + ')[i])
-                    out_line = str(int(line[0])) + ' ' + str(re.findall(r"\"(.*?)\"", str(newline))) + '\n'
-                    out.write(out_line)
-                    print(out_line)
-                out.close()
+                for top_words in top_dic["words"]:
+                    out_line = []
+                    for i in range(number_of_words):
+                        out_line.append((top_dic["words"][top_words])[i][1])
+                    out.write("Topic " + str(top_words) + "\n")
+                    out.write(str(out_line) + "\n")
+                    out.write("\n")
+                    word_dic[top_words] = out_line
+                out.close
 
     else:
-                for line in top_words_mallet:
-                    newline = []
-                    for i in range(0, number_of_words):
-                        newline.append(line[1].split(' + ')[i])
-                    out_line = str(int(line[0])) + ' ' + str(re.findall(r"\"(.*?)\"", str(newline))) + '\n'
-                    print(out_line)
+        for top_words in top_dic["words"]:
+            out_line = []
+            for i in range(number_of_words):
+                out_line.append((top_dic["words"][top_words])[i][1])
+            word_dic[top_words] = out_line
+            print("Topic " + str(top_words))
+            print(out_line)
