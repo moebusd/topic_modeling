@@ -150,7 +150,7 @@ def topic_training_gensim(corpus_dictionary, name_dataset, user, topics, passes_
     return top_dic
 
 
-def topic_training_mallet(corpus_dictionary, name_dataset, user, topics, mallet_path, optimize_interval_mallet=500, iterations_mallet=5000, random_seed_mallet=100):
+def topic_training_mallet(corpus_dictionary, name_dataset, user, topics, mallet_path, chunking=True, optimize_interval_mallet=500, iterations_mallet=5000, random_seed_mallet=100):
     import gensim
     import gensim.corpora as corpora
     from gensim.models import CoherenceModel
@@ -158,26 +158,40 @@ def topic_training_mallet(corpus_dictionary, name_dataset, user, topics, mallet_
     from datetime import datetime
     import pandas as pd
 
+    # Aus dem top_dic werden die einzelenen Tokens Listen ausgelesen.
 
-    #Auslesen der Chunks aus top_dic und zusammenführen zum data_final
-    top_dic = corpus_dictionary
-    chunk_data = []
-    for a in top_dic["korpus"]:
-        for i in top_dic["korpus"][a]:
-            chunk_count = 0
-            chunk_text = []
-            for n in top_dic["korpus"][a][i]["sent"]:
-                if top_dic["korpus"][a][i]["sent"][n]["chunk"] == chunk_count:
-                    chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
-                else:
-                    chunk_data += [[i + " chunk_" + str(chunk_count), chunk_text]]
-                    chunk_count += 1
-                    chunk_text = []
-                    chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
+    if chunking == True:
+        top_dic = corpus_dictionary
+        chunk_data = []
+        for a in top_dic["korpus"]:
+            for i in top_dic["korpus"][a]:
+                chunk_count = 0
+                chunk_text = []
+                for n in top_dic["korpus"][a][i]["sent"]:
+                    if top_dic["korpus"][a][i]["sent"][n]["chunk"] == chunk_count:
+                        chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
+                    else:
+                        chunk_data += [[i + " chunk_" + str(chunk_count), chunk_text]]
+                        chunk_count += 1
+                        chunk_text = []
+                        chunk_text += top_dic["korpus"][a][i]["sent"][n]["cleand"]
+        dataset = []
+        for i in chunk_data:
+            dataset += [i[1]]
 
-    dataset = []
-    for i in chunk_data:
-        dataset += [i[1]]
+    if chunking == False:
+
+        top_dic = corpus_dictionary
+        chunk_data = []
+        for a in top_dic["korpus"]:
+            for i in top_dic["korpus"][a]:
+                for n in top_dic["korpus"][a][i]["sent"]:
+                    cleaned_text = top_dic["korpus"][a][i]["sent"][n]["cleand"]
+                    chunk_data.append([i, cleaned_text])
+        dataset = []
+        for i in chunk_data:
+            dataset += [i[1]]
+
 
 
     id2word = corpora.Dictionary(dataset)
@@ -255,6 +269,7 @@ def topic_training_mallet(corpus_dictionary, name_dataset, user, topics, mallet_
 
 
     # Abspeichern gewisser meta-daten im top_dic
+    top_dic["settings"].update({"processed": True})
     top_dic["settings"].update({"model": "mallet"})
     top_dic["settings"].update({"topics": topics})
     top_dic["settings"].update({"coherence": coherence_ldamallet})
@@ -308,34 +323,43 @@ def topic_training_mallet(corpus_dictionary, name_dataset, user, topics, mallet_
 
 #Es brauch keine unterscheidung mehr zwischen gensim und mallet, bei der Ausgabe der Topics.
 
-def print_topics(topic_dictionary, number_of_words, name_dataset_mallet, save_doc=False):
+def print_topics(topic_dictionary, number_of_words, name_dataset, save_doc=False):
     from datetime import datetime
     import re
     import gensim
+    import pandas as pd
+
     now = str(datetime.now())[:19]
+    now_formatted = now[2:4] + now[5:7] + now[8:10] + now[11:13] + now[14:16] + now[17:19]
+    now = now_formatted
+
     top_dic = topic_dictionary
 
     word_dic = {}
 
     if save_doc:
-                out = open('keywords_mallet_' + name_dataset_mallet + '_' #+ str(len(top_words_mallet.splitlines()))
-                    + 'topics_' + str(number_of_words) + 'keywords' + now + '.txt', 'w',
+                out = open('keywords_mallet_' + name_dataset + '_'+ 'topics_' + str(number_of_words) + 'keywords' + now + '.txt', 'w',
                            encoding='UTF-8')
                 for top_words in top_dic["words"]:
                     out_line = []
                     for i in range(number_of_words):
                         out_line.append((top_dic["words"][top_words])[i][1])
-                    out.write("Topic " + str(top_words) + "\n")
+                    out.write("Topic " + "\n" + str(top_words) + "\n")
                     out.write(str(out_line) + "\n")
                     out.write("\n")
                     word_dic[top_words] = out_line
                 out.close
 
     else:
-        for top_words in top_dic["words"]:
-            out_line = []
-            for i in range(number_of_words):
-                out_line.append((top_dic["words"][top_words])[i][1])
-            word_dic[top_words] = out_line
-            print("Topic " + str(top_words))
-            print(out_line)
+                for top_words in top_dic["words"]:
+                    out_line = []
+                    for i in range(number_of_words):
+                        out_line.append((top_dic["words"][top_words])[i][1])
+                    word_dic[top_words] = out_line
+
+    pd.set_option('display.max_colwidth', None)
+
+    words_df = pd.DataFrame([', '.join([term for term in word_dic[topic]]) for topic in word_dic], columns = ['Terms per Topic'], index=['Topic'+str(topic) for topic in word_dic])
+    words_df.style.set_properties(**{'text-align': 'left'})
+    print(words_df)
+
