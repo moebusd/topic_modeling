@@ -1,8 +1,5 @@
 
 def chunking(top_dic, chunk_setting = 50, ):
-    import json
-    with open(top_dic) as f:
-        top_dic = json.load(f)
 
     for archiv in top_dic["korpus"]:
         for ID in top_dic["korpus"][archiv]:
@@ -16,3 +13,5 @@ def chunking(top_dic, chunk_setting = 50, ):
                     chunk_data = []
 
     top_dic["settings"].update({"chunks": chunk_setting})
+
+    return top_dic
