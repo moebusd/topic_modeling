@@ -1,8 +1,8 @@
-def top_dic_creation(stoplist_path, working_folder, source, Save = False):
+def json_creation(stoplist_path, working_folder, source, Save = False):
     import os
     import re
     import json
-    from topic_modeling.preprocess_outstr import preprocess_outstr
+    from topic_modeling.topic_modeling import preprocess_outstr
 
     dic = {}
 
@@ -82,6 +82,7 @@ def top_dic_creation(stoplist_path, working_folder, source, Save = False):
     top_dic["weight"] = {}
     top_dic["words"] = {}
     top_dic["settings"] = {}
+
 
     top_dic = json.dumps(top_dic)
 
